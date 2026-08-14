@@ -70,7 +70,21 @@ body{
   transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);
   display:flex;flex-direction:column;max-height:62dvh}
 .sheet.show{transform:translateY(0)}
-.grip{width:36px;height:4px;background:#d6d4d1;border-radius:99px;margin:8px auto 4px;flex:none}
+/* 접힌 상태 — 요약 한 줄만 남기고 나머지는 화면 아래로 내려 지도를 열어줍니다.
+   남길 높이는 손잡이+요약줄의 실측값(--peekH)이라 글씨 크기가 바뀌어도 어긋나지 않습니다. */
+.sheet.show.min{transform:translateY(calc(100% - var(--peekH,54px)))}
+/* 손잡이는 끌어서 여닫는 영역이라 터치 타깃을 넉넉히 잡고, 세로 스크롤 제스처를 가로챕니다 */
+.griparea{flex:none;padding:9px 0 5px;cursor:grab;touch-action:none}
+.griparea:active{cursor:grabbing}
+.gripbar{width:36px;height:4px;background:#d6d4d1;border-radius:99px;margin:0 auto}
+.peek{flex:none;display:flex;align-items:center;gap:7px;padding:2px 14px 12px;
+  font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;overflow:hidden}
+.peek .pkm{font-size:14px;font-weight:800;letter-spacing:-.02em}
+.peek .psub{color:var(--sub);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.peek .pcaret{margin-left:auto;font-size:11px;color:var(--sub);font-weight:700;flex:none}
+/* 요약줄은 접힌 상태든 펼친 상태든 항상 둡니다.
+   display:none으로 감추면 offsetHeight가 0이 되어 접힐 높이(--peekH)를 못 재고,
+   그러면 접기 자체가 깨집니다. 펼친 상태에서는 헤더 역할을 겸합니다. */
 .tabs{display:flex;gap:4px;padding:4px 12px 8px;flex:none}
 .tab{flex:1;border:0;background:#f0efed;border-radius:9px;padding:8px;font-size:12.5px;
   font-weight:700;font-family:inherit;color:#77777c;cursor:pointer}
@@ -166,7 +180,8 @@ body{
 </div>
 
 <div class="sheet" id="sheet">
-  <div class="grip"></div>
+  <div class="griparea" id="grip"><div class="gripbar"></div></div>
+  <div class="peek" id="peek"></div>
   <div class="tabs">
     <button class="tab on" data-t="r" type="button">추천 경로</button>
     <button class="tab" data-t="w" type="button">가중치 · 측정값</button>
@@ -570,10 +585,17 @@ function drawRoutes(fit){
   lines.push(L.polyline(c.pts,{color:prof.color,weight:5.5,opacity:1,lineCap:'round'}).addTo(map));
   if(fit) map.fitBounds(L.polyline(c.pts).getBounds(),padOpt());
 }
+/* 지도를 맞출 때는 시트의 "실제로 가리는 높이"를 써야 합니다.
+   접힌 상태에서 전체 높이로 여백을 잡으면 경로가 쓸데없이 위로 몰립니다. */
+function sheetCover(){
+  const s=$('sheet');
+  if(!s.classList.contains('show')) return 40;
+  return s.classList.contains('min') ? peekH() : s.offsetHeight;
+}
+function peekH(){ return $('grip').offsetHeight + $('peek').offsetHeight; }
 function padOpt(){
   const h=document.querySelector('.head').offsetHeight;
-  const s=$('sheet').classList.contains('show')?$('sheet').offsetHeight:40;
-  return {paddingTopLeft:[36,h+16],paddingBottomRight:[36,s+16]};
+  return {paddingTopLeft:[36,h+16],paddingBottomRight:[36,sheetCover()+16]};
 }
 function setMarker(which,ll){
   const isA=which==='A';
@@ -612,7 +634,9 @@ async function search(force){
   if(!force&&key===poolKey&&pool.length){ rank(); drawRoutes(true); render(); return; }
   if(busy) return;
   busy=true; poolKey=key; pool=[]; ranked=[]; clearLines();
-  $('sheet').classList.add('show'); render();
+  $('sheet').classList.add('show');
+  setMin(false,false);   /* 새 결과가 나올 땐 펼쳐서 보여줍니다 */
+  render();
   try{
     const all=walkMode ? await generateLoops(n=>render(n)) : await buildPool(n=>render(n));
     if(!all.length) throw new Error(walkMode?'산책 코스를 만들지 못했습니다':'경로를 찾지 못했습니다');
@@ -637,6 +661,7 @@ function render(loading){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
   document.documentElement.style.setProperty('--accent',prof.color);
   const body=$('body');
+  renderPeek();
 
   if(walkMode? !A : (!A||!B)){
     body.innerHTML= walkMode
@@ -828,6 +853,62 @@ function bind(){
   if(rw) rw.onclick=()=>{ weights={...prof.w}; rank(); drawRoutes(false); render(); };
 }
 
+/* ── 시트 접기/펼치기 ──────────────────────────
+   하단 시트가 지도를 덮어 경로를 볼 수 없다는 문제 때문에 넣었습니다.
+   손잡이를 누르거나 아래로 끌면 요약 한 줄만 남고 지도가 열립니다. */
+let sheetMin=false;
+function syncPeekH(){
+  document.documentElement.style.setProperty('--peekH',peekH()+'px');
+}
+function setMin(v,refit=true){
+  sheetMin=v;
+  $('sheet').classList.toggle('min',v);
+  renderPeek();
+  syncPeekH();
+  /* 접거나 펴면 보이는 지도 영역이 달라지므로 경로를 다시 맞춰줍니다 */
+  if(refit&&ranked.length) setTimeout(()=>drawRoutes(true),320);
+}
+function renderPeek(){
+  const el=$('peek');
+  const caret=`<span class="pcaret">${sheetMin?'▲ 펼치기':'▼ 지도 보기'}</span>`;
+  if(!ranked.length){
+    el.innerHTML=`<span class="psub">${A&&(B||walkMode)?'경로를 찾는 중…':'출발지를 정해주세요'}</span>${caret}`;
+    return;
+  }
+  const c=ranked[sel], f=fmt(c);
+  const tag=walkMode?`코스 ${sel+1}`:(sel?`${sel+1}순위`:'추천');
+  el.innerHTML=`<span>${prof.emoji}</span><span class="pkm">${f.km}km</span>
+    <span class="psub">· ${f.minTxt} · ${tag}</span>${caret}`;
+}
+$('peek').onclick=()=>setMin(!sheetMin);
+
+/* 손잡이 드래그 — 40px 이상 끌면 그 방향으로 확정, 아니면 탭으로 간주해 토글 */
+(function(){
+  const g=$('grip'); let y0=null, moved=0;
+  const down=e=>{ y0=(e.touches?e.touches[0]:e).clientY; moved=0;
+    $('sheet').style.transition='none'; };
+  const move=e=>{ if(y0===null) return;
+    const y=(e.touches?e.touches[0]:e).clientY; moved=y-y0;
+    if(e.cancelable) e.preventDefault();
+    /* 끄는 동안 손가락을 따라오게 하되, 현재 상태에서 갈 수 있는 방향으로만 */
+    const base=sheetMin?`calc(100% - var(--peekH,54px))`:'0px';
+    const d=sheetMin?Math.min(0,moved):Math.max(0,moved);
+    $('sheet').style.transform=`translateY(calc(${base} + ${d}px))`; };
+  const up=()=>{ if(y0===null) return;
+    $('sheet').style.transition=''; $('sheet').style.transform='';
+    if(Math.abs(moved)<8) setMin(!sheetMin);            // 탭
+    else if(moved>40) setMin(true);                      // 아래로 끌기 → 접기
+    else if(moved<-40) setMin(false);                    // 위로 끌기 → 펼치기
+    y0=null; };
+  g.addEventListener('touchstart',down,{passive:true});
+  g.addEventListener('touchmove',move,{passive:false});
+  g.addEventListener('touchend',up);
+  g.addEventListener('mousedown',e=>{down(e);
+    const mm=ev=>move(ev), mu=()=>{up();window.removeEventListener('mousemove',mm);window.removeEventListener('mouseup',mu);};
+    window.addEventListener('mousemove',mm); window.addEventListener('mouseup',mu); });
+})();
+window.addEventListener('resize',syncPeekH);
+
 /* ── 입력 ─────────────────────────────────────── */
 map.on('click',e=>{
   const ll=[e.latlng.lat,e.latlng.lng];
@@ -938,6 +1019,7 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{tab=b.dataset.t;rend
 document.querySelector('.chip[data-k="lover"]').click();
 $('sheet').classList.add('show');
 render();
+syncPeekH();
 </script>
 </body>
 </html>
