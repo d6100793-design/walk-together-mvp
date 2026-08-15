@@ -226,36 +226,58 @@ const $=i=>document.getElementById(i);
         같은 길이라도 부모님과 혼자는 소요시간이 달라야 하므로,
         Valhalla가 준 시간을 쓰지 않고 여기서 다시 계산합니다. */
 const PROFILES={
+  /* 연인과 반려동물이 8구간 중 7곳에서 같은 길을 골랐습니다. 둘 다 "차 없는 산책로"를
+     쫓기 때문인데, 실제로는 갈리는 지점이 있습니다. 연인은 전망을 위해 계단이나 언덕을
+     감수하고 오래 걸어도 되지만, 개는 계단을 싫어하고 흙·풀 바닥을 좋아하며 오래 걸으면
+     지칩니다. 그 차이를 comfort/ground/detour로 벌렸습니다. */
   lover :{key:'lover', label:'연인',   emoji:'💕', color:'#FF4B6E', spd:4.3, detour:1.60,
-    w:{comfort:.35, charm:.95, quiet:.80, safe:.35, fast:.10, easy:.10},
-    line:'예쁜 길로 천천히. 시간은 넉넉하게 봅니다.'},
+    w:{comfort:.20, charm:.95, quiet:.80, safe:.35, fast:.10, easy:.10, ground:.05},
+    line:'예쁜 길로 천천히. 전망이 좋으면 계단이나 언덕도 감수합니다.'},
   /* fast를 .15로 두었더니 이태원→남산에서 4.8km·90분짜리를 추천했습니다.
      계단만 적으면 아무리 돌아가도 괜찮다는 뜻이 되어버려서, 부모님에게는
      "우회 거리 자체가 부담"이라는 점을 .45로 반영했습니다. */
   parent:{key:'parent',label:'부모님', emoji:'👪', color:'#007AFF', spd:3.2, detour:1.25, stairCap:30,
-    w:{comfort:1.0, charm:.35, quiet:.45, safe:.85, fast:.45, easy:.40},
+    w:{comfort:1.0, charm:.35, quiet:.65, safe:.85, fast:.45, easy:.40, ground:.00},
     line:'계단과 오르막을 먼저 피하되, 크게 돌아가지 않는 쪽을 고릅니다.'},
+  /* fast를 .95로 두면 혼자 모드는 언제나 최단 경로를 고릅니다. 그런데 최단 경로는
+     네이버 지도가 이미 주는 것이라, 그 설정에서는 이 앱을 쓸 이유가 없어집니다.
+     실제로 8구간 중 6곳에서 혼자와 부모님이 같은 길을 골랐고, 혼자 경로는 늘
+     "기본 경로와 차이 없음"으로 나왔습니다.
+     혼자 걷는 사람도 최단이 목적이면 다른 앱을 쓸 테니, 여기서는
+     "빠르되 삭막하지 않은 길"로 다시 잡았습니다. detour 상한이 1.15라 크게 돌지는 않습니다. */
   solo  :{key:'solo',  label:'혼자',   emoji:'🚶', color:'#F59E0B', spd:5.6, detour:1.15,
-    w:{comfort:.20, charm:.35, quiet:.30, safe:.45, fast:.95, easy:.60},
-    line:'큰길로 곧장. 돌아가지 않는 것을 우선합니다.'},
-  /* safe를 .70으로 두었을 때 해운대에서 횡단보도 18개짜리를 골랐습니다.
-     개와 걸을 때 횡단보도는 산책로 비율보다 우선하는 조건이라 .95로 올리고,
-     대신 charm을 낮춰 연인 프로파일과도 구분되게 했습니다. */
-  pet   :{key:'pet',   label:'반려동물',emoji:'🐾', color:'#10B981', spd:3.8, detour:1.50, stairCap:150,
-    w:{comfort:.55, charm:.60, quiet:.95, safe:.95, fast:.25, easy:.25},
-    line:'차와 횡단보도를 피해 산책로 위주로 고릅니다.'}
+    w:{comfort:.20, charm:.55, quiet:.55, safe:.45, fast:.65, easy:.55, ground:.20},
+    line:'크게 돌지 않으면서도 삭막하지 않은 길을 고릅니다.'},
+  /* safe를 .70으로 두었을 때 해운대에서 횡단보도 18개짜리를 골라 .95로 올렸는데,
+     그래도 분당에서 19개짜리가 나왔습니다. 원인은 가중치가 아니라 지형이었습니다 —
+     신도시의 조용한 공원길은 대부분 큰 블록을 가로지르며 건널목을 여러 번 지납니다.
+     "차도 없고 건널목도 없는 길"이 아예 존재하지 않는 동네가 많다는 뜻입니다.
+     그래서 둘 중 무엇을 우선할지 정했습니다. 개에게는 차도 옆을 오래 걷는 쪽이
+     건널목을 몇 번 더 지나는 쪽보다 나쁘므로 quiet(차도 회피)를 우선하고,
+     대신 극단만 막도록 km당 건널목 상한을 둡니다. 문구도 실제 동작에 맞췄습니다. */
+  pet   :{key:'pet',   label:'반려동물',emoji:'🐾', color:'#10B981', spd:3.8, detour:1.30,
+    stairCap:60, crossCap:6,
+    w:{comfort:.55, charm:.55, quiet:.95, safe:.95, fast:.40, easy:.25, ground:.70},
+    line:'차도를 먼저 피하고 산책로 위주로 고릅니다. 대신 건널목은 늘 수 있어요 — 조용한 공원길이 큰 블록을 가로지르는 동네가 많습니다.'}
 };
 
 /* ── 사용자에게 보이는 6개 축 ──────────────────────
    각 축이 "무엇으로 측정되는지"를 같이 들고 다닙니다.
    가중치가 추상적인 느낌으로 남지 않게 하려는 목적입니다. */
 const AXES=[
-  {k:'comfort',name:'편안함',  desc:'계단·오르막이 적은',   src:'계단 길이 + 누적 오르막(고도 실측)'},
+  {k:'comfort',name:'편안함',  desc:'계단·오르막이 적은',   src:'계단 길이 + 누적 오르막 + 최대 경사 + 노면'},
   {k:'charm',  name:'걷는 맛', desc:'차 없는 산책로 위주',  src:'보행자 전용길·공원길 비율'},
-  {k:'quiet',  name:'한적함',  desc:'큰 찻길을 피하는',     src:'왕복 4차선급 이상 도로 비율'},
-  {k:'safe',   name:'안전함',  desc:'횡단보도가 적은',      src:'경로가 건너는 횡단보도 수'},
+  {k:'quiet',  name:'한적함',  desc:'큰 찻길을 피하는',     src:'큰길 비율 + 주변 밀집도'},
+  {k:'safe',   name:'안전함',  desc:'횡단보도가 적은',      src:'횡단보도 수 + 보도 있는 구간 비율'},
   {k:'fast',   name:'빠름',    desc:'돌아가지 않는',        src:'전체 보행 거리'},
-  {k:'easy',   name:'쉬움',    desc:'길이 단순한',          src:'꺾이는 횟수'}
+  {k:'easy',   name:'쉬움',    desc:'길이 단순한',          src:'꺾이는 횟수'},
+  /* 노면은 측정만 해두고 안 쓰고 있었습니다. 그런데 평지에서 부모님과 혼자를
+     가르는 유일한 신호가 이것이었습니다 — 계단·경사가 0이면 '편안함'이 무력해져
+     둘 다 "짧고 단순한 길"로 수렴해버렸거든요(8구간 중 6곳에서 같은 경로).
+     흥미롭게도 같은 값이 동행자에 따라 정반대로 작용합니다. 흙길은 부모님께는
+     불편하지만 개에게는 아스팔트보다 낫습니다. 그래서 '편안함'에는 거친 노면을
+     감점 요인으로 넣고, 여기서는 흙길을 선호 요인으로 따로 뒀습니다. */
+  {k:'ground', name:'흙·풀길', desc:'포장 안 된 산책로',    src:'비포장 노면 비율'}
 ];
 
 /* ── 후보 생성용 costing 세트 ──────────────────────
@@ -270,7 +292,6 @@ const POOL=[
   ['산책로 최대',  {walkway_factor:.12, use_living_streets:.9}],
   ['계단·언덕 회피',{step_penalty:900, max_hiking_difficulty:0, use_hills:0, driveway_factor:12}],
   ['골목·주택가',  {use_living_streets:1, alley_factor:.35, walkway_factor:.6}],
-  ['밝은 길',      {use_lit:1, walkway_factor:.8}],
   ['무계단 산책로',{step_penalty:900, use_hills:.1, walkway_factor:.25, use_living_streets:.8}]
 ];
 
@@ -295,6 +316,7 @@ let ranked=[], sel=0, tab='r', busy=false, cmpMode=false;
 let lines=[], poolKey='', dropped=0;
 /* 산책 모드 — 목적지 없이 출발지와 시간만으로 순환 코스 5개 */
 let walkMode=false, minutes=30;
+let loadingN=0;   /* 진행 중 몇 개까지 나왔는지 — 부분 결과를 보여주면서 같이 표시 */
 
 /* ── 유틸 ─────────────────────────────────────── */
 function toast(t,ms=1900){const el=$('toast');el.textContent=t;el.classList.add('on');
@@ -309,6 +331,62 @@ function encodePolyline(pts,precision=6){
     return s+String.fromCharCode(v+63); };
   for(const p of pts){ const la=Math.round(p[0]*f), ln=Math.round(p[1]*f);
     out+=enc(la-plat)+enc(ln-plng); plat=la; plng=ln; }
+  return out;
+}
+/* ── 경로 다양성 계산 (API 호출 없이 좌표만으로) ─────────────
+   경로 생성(1회 호출)은 싸고 지형 측정(2회 호출)은 비쌉니다. 그래서 후보를 넉넉히
+   만들어 놓고, 측정 전에 "기하학적으로 얼마나 다른 길인가"를 좌표만으로 따져
+   가장 다른 것들만 골라 측정합니다. 같은 골목을 지나는 후보 6개를 재는 것보다
+   전혀 다른 골목을 지나는 후보 6개를 재는 편이 훨씬 쓸모 있습니다. */
+const rad=d=>d*Math.PI/180;
+function distM(a,b){
+  const R=6371000,dφ=rad(b[0]-a[0]),dλ=rad(b[1]-a[1]);
+  const h=Math.sin(dφ/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(dλ/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
+}
+function bearingTo(a,b){
+  const φ1=rad(a[0]),φ2=rad(b[0]),dλ=rad(b[1]-a[1]);
+  return (Math.atan2(Math.sin(dλ)*Math.cos(φ2),
+    Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(dλ))*180/Math.PI+360)%360;
+}
+/* 경로를 약 37m 격자에 스냅해 "지나간 칸 집합"으로 만든 뒤 겹침 비율을 봅니다 */
+function cellSet(pts){
+  const s=new Set();
+  for(const p of pts) s.add(Math.round(p[0]*3000)+','+Math.round(p[1]*3000));
+  return s;
+}
+function overlap(a,b){
+  let inter=0; for(const k of a) if(b.has(k)) inter++;
+  return inter/(a.size+b.size-inter||1);
+}
+/* 후보 고르기.
+   ⚠ 처음에는 기하학적으로 가장 안 겹치는 것만 골랐는데, 그게 큰 실수였습니다.
+   "지도상 다른 길"과 "지표가 다른 길"은 별개입니다. 분당에서 큰길 79%·건널목 1개짜리
+   후보가 기하학적으로 특이하지 않다는 이유로 탈락했고, 남은 여섯이 전부 산책로 90%대로
+   채워지면서 네 동행자가 같은 길을 골랐습니다(고유 4/4 → 1/4).
+
+   costing 세트는 애초에 지표를 벌리도록 설계된 것이므로, 성격이 다른 costing에서
+   나온 경로부터 한 자리씩 확보하고 남는 자리만 기하 다양성으로 채웁니다. */
+const CHARACTER_ORDER=['균형','큰길 최단','산책로 최대','계단·언덕 회피','골목·주택가','무계단 산책로'];
+function pickDiverse(cands,n){
+  if(cands.length<=n) return cands;
+  cands.forEach(c=>{ if(!c._cells) c._cells=cellSet(c.pts); });
+  const out=[];
+  for(const key of CHARACTER_ORDER){
+    if(out.length>=n) break;
+    const c=cands.find(x=>!out.includes(x)&&x.srcs.includes(key));
+    if(c) out.push(c);
+  }
+  while(out.length<n){
+    let best=null,bestSim=2;
+    for(const c of cands){
+      if(out.includes(c)) continue;
+      const sim=out.length?Math.max(...out.map(o=>overlap(c._cells,o._cells))):0;
+      if(sim<bestSim){ bestSim=sim; best=c; }
+    }
+    if(!best) break;
+    out.push(best);
+  }
   return out;
 }
 /* 출발점에서 특정 방위각으로 distM 떨어진 좌표 */
@@ -336,20 +414,33 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 /* 공개 데모 서버는 동시 요청 수로 제한을 겁니다 (초당 횟수가 아니라).
    실측: 동시 4까지는 12/12 성공, 동시 6에서 429가 뜹니다.
    429를 만나면 지수 백오프로 다시 시도합니다. */
-async function vpost(ep,body,tries=3){
+/* 이 앱은 무료 공개 서버 하나에 전적으로 기대고 있습니다. 실제로 개발 도중
+   그 서버가 502로 완전히 죽어 앱도 같이 멈췄습니다. 무료 대체 인스턴스를 찾아봤지만
+   (valhalla.openstreetmap.de는 API가 아니라 안내 페이지, hotosm은 응답 없음,
+   Stadia Maps는 키 필요) 대안이 없어서, 대신 죽었을 때 버티는 쪽을 강화했습니다.
+   4번까지 지수 백오프로 재시도하고, 마지막에는 사람이 읽을 수 있는 이유를 남깁니다. */
+let lastNetError='';
+async function vpost(ep,body,tries=4){
   for(let t=0;t<tries;t++){
     try{
       const r=await fetch(`${VALHALLA}/${ep}`,{method:'POST',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(body),
+        signal:AbortSignal.timeout(20000)});
       if(r.status===429||r.status>=500){
-        if(t<tries-1){ await sleep(500*Math.pow(2,t)+Math.random()*250); continue; }
-        throw new Error(r.status===429?'서버가 혼잡합니다':`서버 오류 ${r.status}`);
+        if(t<tries-1){ await sleep(600*Math.pow(2,t)+Math.random()*300); continue; }
+        lastNetError = r.status===429 ? '서버가 혼잡합니다(429)'
+                     : `경로 서버가 응답하지 않습니다(${r.status})`;
+        throw new Error(lastNetError);
       }
       if(!r.ok) throw new Error(`${ep} ${r.status}`);
       return r.json();
     }catch(e){
-      if(t===tries-1) throw e;
-      await sleep(500*Math.pow(2,t));
+      if(t===tries-1){
+        if(!lastNetError) lastNetError = (e.name==='TimeoutError'||e.name==='AbortError')
+          ? '경로 서버 응답이 너무 느립니다' : '경로 서버에 연결하지 못했습니다';
+        throw e;
+      }
+      await sleep(600*Math.pow(2,t));
     }
   }
 }
@@ -366,26 +457,57 @@ async function limited(tasks,n=4){
    처음에는 "7개 경로를 전부 받은 뒤 → 전부 측정"으로 짰는데, 그러면 가장 느린
    경로 하나 때문에 나머지 6개가 측정을 시작도 못 하고 기다립니다.
    경로가 도착하는 즉시 그 경로의 측정을 시작하도록 바꿔 대기 시간을 없앴습니다. */
-async function buildPool(onProgress){
-  const locs=[{lat:A[0],lon:A[1]},{lat:B[0],lon:B[1]}];
-  const bySh=new Map();
+const MEASURE_MAX=6;   /* 지형을 잴 후보 수 상한 — 측정이 호출 비용의 대부분입니다 */
+
+/* 경로 하나 받아오기 (측정은 아직 안 함). 경유지를 끼워 넣을 수 있습니다. */
+async function routeOnly(name,opts,via){
+  const locs=[{lat:A[0],lon:A[1]},
+              ...(via?[{lat:via[0],lon:via[1]}]:[]),
+              {lat:B[0],lon:B[1]}];
+  const d=await vpost('route',{locations:locs,costing:'pedestrian',
+    costing_options:{pedestrian:opts},directions_options:{language:'ko-KR',units:'kilometers'}});
+  const pts=[]; let man=0;
+  d.trip.legs.forEach(l=>{ pts.push(...decodePolyline(l.shape)); man+=l.maneuvers.length; });
+  const shape=via?encodePolyline(pts):d.trip.legs[0].shape;
+  return {src:name, srcs:[name], shape, pts, km:d.trip.summary.length,
+          turns:Math.max(1,man-2*(d.trip.legs.length-1))};
+}
+
+async function buildPool(onProgress,onCandidate){
   let done=0;
-  await limited(POOL.map(([name,opts])=>async()=>{
-    const d=await vpost('route',{locations:locs,costing:'pedestrian',
-      costing_options:{pedestrian:opts},directions_options:{language:'ko-KR',units:'kilometers'}});
-    const leg=d.trip.legs[0];
-    /* 같은 shape이 나온 요청은 하나로 합칩니다. 평지 격자 지역에서는
-       7개 요청이 3~4개 경로로 수렴하는 일이 흔합니다.
-       (검사-후-등록 사이에 await이 없으므로 중복 측정은 일어나지 않습니다) */
-    const hit=bySh.get(leg.shape);
-    if(hit){ hit.srcs.push(name); onProgress(++done); return; }
-    const c={src:name, srcs:[name], shape:leg.shape, pts:decodePolyline(leg.shape),
-             km:d.trip.summary.length, turns:leg.maneuvers.length};
-    bySh.set(leg.shape,c);
+  const bySh=new Map();
+  const add=list=>{ for(const c of list){ if(!c) continue;
+    const hit=bySh.get(c.shape); if(hit){ hit.srcs.push(c.src); } else bySh.set(c.shape,c); } };
+
+  /* 경로 후보를 한 번에 던집니다.
+     처음에는 "costing으로 먼저 뽑고, 부족하면 경유지 후보 추가"하는 2라운드였는데,
+     그 사이 장벽 때문에 앞 라운드가 다 끝나야 다음이 시작됐습니다. 경로 요청은
+     측정보다 싸므로 전부 동시에 던지고, 비싼 측정만 골라서 합니다.
+
+     경유지 후보가 필요한 이유 — 평지 격자에서는 계단·경사가 없어 어떤 costing을 줘도
+     같은 길이 나옵니다(성수·일산·전주에서 7개 요청이 2~4개로 수렴). A→B 직선의
+     좌우로 경유지를 밀어 물리적으로 다른 골목을 지나게 강제합니다. */
+  {
+    const th=bearingTo(A,B), L=distM(A,B);
+    const mid=[(A[0]+B[0])/2,(A[1]+B[1])/2];
+    const offs=[[90,.22,0],[-90,.22,0],[90,.45,2]];   /* [방향, 거리비, costing] */
+    add(await limited([
+      ...POOL.map(([n,o])=>()=>routeOnly(n,o).catch(()=>null)),
+      ...offs.map(([sign,frac,ci])=>()=>{
+        const via=destPoint(mid[0],mid[1],th+sign,Math.min(700,Math.max(120,L*frac)));
+        return routeOnly(`우회 ${sign>0?'좌':'우'}${Math.round(frac*100)}`,POOL[ci][1],via).catch(()=>null);
+      })
+    ],4));
+  }
+  /* 가장 안 겹치는 것만 골라 측정.
+     후보를 11개 만들어도 측정은 상한까지만 하므로 총 호출 수는 이전과 비슷합니다. */
+  const picked=pickDiverse([...bySh.values()],MEASURE_MAX);
+  await limited(picked.map(c=>async()=>{
     await measure(c);
     onProgress(++done);
+    if(c.measured) onCandidate(c);
   }),4);
-  return [...bySh.values()];
+  return picked;
 }
 
 /* ── 1단계(산책 모드): 목적지 없는 순환 코스 ─────────────
@@ -396,31 +518,42 @@ async function buildPool(onProgress){
    경유지가 떨어지면 10km가 나오기도 해서 보정이 필요합니다.
    보정을 target/km 배로 곧장 하면 1009m→504m→1009m로 진동해서, 제곱근 감쇠를 쓰고
    시도마다 방위각을 틀며 "가장 목표에 가까웠던 결과"를 남깁니다. */
-async function generateLoops(onProgress){
+/* 이전 버전은 코스 5개가 각자 최대 4번씩 반지름을 고쳐가며 목표 거리를 맞췄습니다.
+   그런데 목표를 못 맞추는 원인은 대개 코스별 사정이 아니라 그 동네 전체의 성질입니다
+   — 강·산·해안이 있으면 다섯 코스가 나란히 짧아지거나 길어집니다.
+   그래서 5개를 각자 헤매게 두지 않고, 1라운드에서 다섯을 동시에 던져 그 결과의
+   중앙값으로 지역 보정계수를 한 번에 구한 뒤, 2라운드에서 여전히 어긋난 것만 다시 뽑습니다.
+   경로 호출이 최대 20번에서 보통 5~9번으로 줄어듭니다. */
+async function generateLoops(onProgress,onCandidate){
   const targetKm=minutes*prof.spd/60;
   const base=Math.random()*360;
-  const cfgs=[0,2,3,4,1].map(i=>POOL[i]);   // 균형 / 산책로 최대 / 계단·언덕 회피 / 골목·주택가 / 큰길 최단
+  const cfgs=[0,2,3,4,1].map(i=>POOL[i%POOL.length]);   // 균형 / 산책로 최대 / 계단·언덕 회피 / 골목·주택가 / 큰길 최단
+  const r0=targetKm*1000/4.66;
+  const errOf=b=>b?Math.abs(b.km-targetKm)/targetKm:9;
   let done=0;
+
+  async function tryOne(opts,th,r){
+    const w=[th,th+120].map(t=>{const p=destPoint(A[0],A[1],t,r);return {lat:p[0],lon:p[1]};});
+    try{
+      const d=await vpost('route',{locations:[{lat:A[0],lon:A[1]},...w,{lat:A[0],lon:A[1]}],
+        costing:'pedestrian',costing_options:{pedestrian:opts},
+        directions_options:{language:'ko-KR',units:'kilometers'}});
+      return {d,km:d.trip.summary.length,th};
+    }catch(e){ return null; }
+  }
+
+  /* 1라운드 — 다섯 방향을 동시에 */
+  const first=await limited(cfgs.map(([nm,opts],i)=>()=>tryOne(opts,base+i*72,r0)),4);
+  const ratios=first.filter(Boolean).map(x=>x.km/targetKm).sort((a,b)=>a-b);
+  const med=ratios.length?ratios[Math.floor(ratios.length/2)]:1;
+  const rAdj=r0/Math.max(.5,Math.min(2,med));
+
+  /* 2라운드 — 보정된 반지름으로, 어긋난 코스만. 방위각도 틀어 육지 쪽을 찾습니다 */
   const res=await limited(cfgs.map(([name,opts],i)=>async()=>{
-    let r=targetKm*1000/4.66, best=null;
-    /* 해안가처럼 방위각의 절반이 바다인 곳은 경유지가 육지로 스냅되면서 코스가
-       짧아집니다. 이때 반지름만 키워봐야 같은 곳으로 스냅되니, 시도마다 방위각을
-       41°씩 틀어 육지 쪽을 찾습니다. 목표에 근접하면 바로 빠져나오므로
-       추가 시도 비용은 어긋난 코스만 부담합니다. */
-    for(let att=0; att<4; att++){
-      const th=base+i*72+att*41;
-      const p1=destPoint(A[0],A[1],th,r), p2=destPoint(A[0],A[1],th+120,r);
-      let d;
-      try{
-        d=await vpost('route',{locations:[{lat:A[0],lon:A[1]},{lat:p1[0],lon:p1[1]},
-            {lat:p2[0],lon:p2[1]},{lat:A[0],lon:A[1]}],
-          costing:'pedestrian',costing_options:{pedestrian:opts},
-          directions_options:{language:'ko-KR',units:'kilometers'}});
-      }catch(e){ r*=0.85; continue; }   /* 물 위·도달 불가 → 반지름 줄이고 방위각 바꿔 재시도 */
-      const km=d.trip.summary.length, err=Math.abs(km-targetKm)/targetKm;
-      if(!best||err<best.err) best={d,km,err,th};
-      if(err<=0.22) break;
-      r*=Math.max(.55,Math.min(1.8,Math.sqrt(targetKm/km)));
+    let best=first[i];
+    for(let att=1; att<=2 && errOf(best)>0.22; att++){
+      const alt=await tryOne(opts, base+i*72+att*41, rAdj*(att===2?1.15:1));
+      if(alt&&errOf(alt)<errOf(best)) best=alt;
     }
     if(!best){ onProgress(++done); return null; }
     const pts=[]; let man=0;
@@ -428,9 +561,10 @@ async function generateLoops(onProgress){
     /* leg마다 출발/도착 안내가 붙으므로 이어붙인 만큼 빼줍니다 */
     const turns=Math.max(1,man-2*(best.d.trip.legs.length-1));
     const c={src:name,srcs:[name],shape:encodePolyline(pts),pts,km:best.km,turns,
-             bearing:Math.round(((best.th%360)+360)%360),err:best.err};
+             bearing:Math.round(((best.th%360)+360)%360),err:errOf(best)};
     await measure(c);
     onProgress(++done);
+    if(c.measured) onCandidate(c);
     return c;
   }),4);
   return res.filter(Boolean);
@@ -466,12 +600,52 @@ function courseTraits(c){
    실패한 경로가 오히려 가장 편한 경로로 1등을 하게 됩니다. 실제로 초기 버전에서
    남산 가는 경로가 누적 상승 0m로 집계돼 부모님 추천으로 뽑히는 일이 있었습니다.
    그래서 측정 성공 여부를 따로 기록하고, 실패한 후보는 순위에서 제외합니다. */
+/* 같은 경로를 다시 재지 않도록 세션 동안 측정값을 들고 있습니다.
+   "다시 뽑기"나 동행자 전환에서 같은 shape이 재등장하는 일이 잦습니다. */
+const measCache=new Map();
+/* 측정값은 지형 정보라 잘 안 변합니다. 브라우저에 남겨두면 같은 동네를 다시 볼 때
+   호출 없이 즉시 뜨고, 서버가 죽어 있어도 이전에 본 경로는 계속 보입니다. */
+const LS_KEY='walk-mvp-meas-v1';
+try{
+  const saved=JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+  for(const k in saved) measCache.set(k,saved[k]);
+}catch(e){}
+let lsTimer=null;
+function persistMeas(){
+  clearTimeout(lsTimer);
+  lsTimer=setTimeout(()=>{
+    try{
+      const o={}; let i=0;
+      /* 최근 것부터 300개까지만 — 용량 초과로 저장이 통째로 실패하지 않게 */
+      const ent=[...measCache.entries()].slice(-300);
+      for(const [k,v] of ent){ o[k]=v; i++; }
+      localStorage.setItem(LS_KEY,JSON.stringify(o));
+    }catch(e){ try{ localStorage.removeItem(LS_KEY); }catch(_){} }
+  },800);
+}
 async function measure(c){
-  /* 동시 요청 수를 아끼려고 두 호출을 순차로 보냅니다 */
+  const hit=measCache.get(c.shape);
+  if(hit){ c.m=hit.m; c.measured=hit.measured; return c; }
+  await measureNow(c);
+  measCache.set(c.shape,{m:c.m,measured:c.measured});
+  persistMeas();
+  return c;
+}
+/* 고도를 어떻게 구할지 ─────────────────────────────
+   원래는 후보마다 /height를 따로 불러 정확한 누적 상승을 구했습니다. 정확하지만
+   후보 6개면 그것만 6번이라 전체 호출의 3분의 1을 차지했습니다.
+   trace_attributes가 주는 edge.mean_elevation으로도 계산할 수 있는데, 엣지 평균값이라
+   표본이 성겨 실제의 68%쯤으로 낮게 나옵니다(20개 경로 실측, 표준편차 0.098).
+   그런데 순위상관은 0.979였습니다 — 절대값은 틀려도 "어느 쪽이 더 가파른가"는 맞힙니다.
+   순위는 후보 간 상대 비교로만 정해지므로 엣지 기반으로 충분하고,
+   화면에 숫자로 보여줄 경로만 나중에 /height로 정확히 다시 잽니다. */
+const ASCENT_BIAS=0.68;
+async function measureNow(c){
   const attr=await vpost('trace_attributes',{encoded_polyline:c.shape,costing:'pedestrian',shape_match:'walk_or_snap',
-      filters:{attributes:['edge.use','edge.road_class','edge.length','edge.surface'],action:'include'}}).catch(()=>null);
-  const hgt=await vpost('height',{encoded_polyline:c.shape,range:true}).catch(()=>null);
-  const m={stairs:0,cross:0,walkway:0,arterial:0,ascent:0,rough:0};
+      filters:{attributes:['edge.use','edge.road_class','edge.length','edge.surface','edge.mean_elevation',
+                            'edge.max_upward_grade','edge.sidewalk','edge.density'],
+               action:'include'}}).catch(()=>null);
+  const m={stairs:0,cross:0,walkway:0,arterial:0,ascent:0,rough:0,maxgrade:0,sidewalk:0,density:0};
   if(attr&&attr.edges){
     const E=attr.edges, L=E.reduce((s,e)=>s+(e.length||0),0)||1;
     const sum=f=>E.filter(f).reduce((s,e)=>s+(e.length||0),0);
@@ -480,15 +654,39 @@ async function measure(c){
     m.walkway  = Math.round(100*sum(e=>['footway','path','pedestrian','track'].includes(e.use))/L);
     m.arterial = Math.round(100*sum(e=>['primary','secondary','trunk','motorway'].includes(e.road_class))/L);
     m.rough    = Math.round(100*sum(e=>!['paved_smooth','paved'].includes(e.surface))/L);
+    /* 총 오르막이 적어도 중간에 15% 급경사 한 구간이 있으면 부모님께는 그게 전부입니다.
+       누적값과 별개로 "가장 가파른 곳"을 따로 봅니다. */
+    m.maxgrade = Math.round(Math.max(0,...E.map(e=>e.max_upward_grade||0)));
+    /* 보도 태그는 지역 편차가 큽니다(이태원은 전부 none, 분당은 both가 나옴).
+       태그가 아예 없는 지역에서는 0이 되어 축에 영향을 주지 않습니다. */
+    m.sidewalk = Math.round(100*sum(e=>e.sidewalk&&e.sidewalk!=='none')/L);
+    /* 주변 밀집도 — road_class보다 부드러운 '번화함' 신호 */
+    const dn=E.map(e=>e.density).filter(v=>v!=null);
+    m.density  = dn.length?Math.round(10*dn.reduce((s,v)=>s+v,0)/dn.length)/10:0;
   }
-  if(hgt&&hgt.range_height){
-    const R=hgt.range_height;
+  if(attr&&attr.edges){
     /* 누적 상승만 셉니다 — 내리막은 힘들지 않으니까 */
-    m.ascent=Math.round(R.reduce((s,p,i)=>i?s+Math.max(0,p[1]-R[i-1][1]):0,0));
+    const E=attr.edges; let a=0;
+    for(let i=1;i<E.length;i++){
+      const x=E[i-1].mean_elevation, y=E[i].mean_elevation;
+      if(x!=null&&y!=null) a+=Math.max(0,y-x);
+    }
+    m.ascent=Math.round(a/ASCENT_BIAS);
+    m.ascentApprox=true;
   }
   c.m=m;
-  c.measured = !!(attr&&attr.edges&&attr.edges.length) && !!(hgt&&hgt.range_height);
+  c.measured = !!(attr&&attr.edges&&attr.edges.length);
   return c;
+}
+/* 화면에 숫자로 보여줄 경로만 정확한 고도로 다시 잽니다 (호출 1번) */
+async function refineAscent(c){
+  if(!c||!c.m||!c.m.ascentApprox) return;
+  const h=await vpost('height',{encoded_polyline:c.shape,range:true}).catch(()=>null);
+  if(!h||!h.range_height) return;
+  const R=h.range_height;
+  c.m.ascent=Math.round(R.reduce((s,p,i)=>i?s+Math.max(0,p[1]-R[i-1][1]):0,0));
+  c.m.ascentApprox=false;
+  const hit=measCache.get(c.shape); if(hit) hit.m=c.m;
 }
 
 /* ── 2단계: 동행자 가중치로 재랭킹 ─────────────── */
@@ -504,20 +702,28 @@ function axisScores(){
     arterial: pool.map(c=>c.m.arterial),
     cross   : pool.map(c=>c.m.cross/km(c)),
     dist    : pool.map(c=>c.km),
-    turns   : pool.map(c=>c.turns/km(c))
+    turns   : pool.map(c=>c.turns/km(c)),
+    rough   : pool.map(c=>c.m.rough),
+    maxgrade: pool.map(c=>c.m.maxgrade),
+    sidewalk: pool.map(c=>c.m.sidewalk),
+    density : pool.map(c=>c.m.density)
   };
   const rng=k=>[Math.min(...raw[k]),Math.max(...raw[k])];
   const [sL,sH]=rng('stairs'),[aL,aH]=rng('ascent'),[wL,wH]=rng('walkway'),
-        [rL,rH]=rng('arterial'),[cL,cH]=rng('cross'),[dL,dH]=rng('dist'),[tL,tH]=rng('turns');
+        [rL,rH]=rng('arterial'),[cL,cH]=rng('cross'),[dL,dH]=rng('dist'),[tL,tH]=rng('turns'),
+        [roL,roH]=rng('rough'),[mgL,mgH]=rng('maxgrade'),
+        [swL,swH]=rng('sidewalk'),[deL,deH]=rng('density');
   pool.forEach((c,i)=>{
     c.ax={
       /* 계단이 오르막보다 더 부담이라 조금 더 무겁게 봅니다 */
-      comfort: .65*norm(raw.stairs[i],sL,sH,true) + .35*norm(raw.ascent[i],aL,aH,true),
+      comfort: .38*norm(raw.stairs[i],sL,sH,true) + .22*norm(raw.ascent[i],aL,aH,true)
+             + .22*norm(raw.maxgrade[i],mgL,mgH,true) + .18*norm(raw.rough[i],roL,roH,true),
       charm  : norm(raw.walkway[i],wL,wH,false),
-      quiet  : norm(raw.arterial[i],rL,rH,true),
-      safe   : norm(raw.cross[i],cL,cH,true),
+      quiet  : .65*norm(raw.arterial[i],rL,rH,true) + .35*norm(raw.density[i],deL,deH,true),
+      safe   : .70*norm(raw.cross[i],cL,cH,true) + .30*norm(raw.sidewalk[i],swL,swH,false),
       fast   : norm(raw.dist[i],dL,dH,true),
-      easy   : norm(raw.turns[i],tL,tH,true)
+      easy   : norm(raw.turns[i],tL,tH,true),
+      ground : norm(raw.rough[i],roL,roH,false)
     };
   });
 }
@@ -540,15 +746,22 @@ function stairPenalty(c,p){
   const over=c.m.stairs-p.stairCap;
   return over<=0 ? 1 : Math.max(.15, 1-over/(p.stairCap*3));
 }
+/* 건널목 상한 — 조용한 길을 우선하되 "1km에 6번 넘게 건너는" 극단은 막습니다 */
+function crossPenalty(c,p){
+  if(!p.crossCap) return 1;
+  const per=c.m.cross/Math.max(c.km,.01);
+  const over=per-p.crossCap;
+  return over<=0 ? 1 : Math.max(.35,1-over/p.crossCap);
+}
 function scoreOf(c,p,w){
   const den=Object.values(w).reduce((s,v)=>s+v,0)||1;
   const base=AXES.reduce((s,a)=>s+c.ax[a.k]*w[a.k],0)/den;
-  return base*detourPenalty(c,p)*stairPenalty(c,p);
+  return base*detourPenalty(c,p)*stairPenalty(c,p)*crossPenalty(c,p);
 }
 function rank(){
   if(!pool.length) return;
   axisScores();
-  pool.forEach(c=>{ c.pen=detourPenalty(c,prof)*stairPenalty(c,prof); c.score=scoreOf(c,prof,weights); });
+  pool.forEach(c=>{ c.pen=detourPenalty(c,prof)*stairPenalty(c,prof)*crossPenalty(c,prof); c.score=scoreOf(c,prof,weights); });
   ranked=[...pool].sort((a,b)=>b.score-a.score);
   sel=0;
 }
@@ -556,6 +769,25 @@ function rank(){
 function bestFor(p){
   return pool.map(c=>({c,s:scoreOf(c,p,p.w)})).sort((x,y)=>y.s-x.s)[0].c;
 }
+
+/* ── 체감 판정 ─────────────────────────────────
+   순위는 언제나 매겨집니다. 0.3점 차이여도 1등과 2등이 갈리죠.
+   그런데 그 차이가 실제로 걸을 때 느껴지지 않으면, 순위를 보여주는 것 자체가
+   거짓말에 가깝습니다. "이 길이 더 편해요"라고 해놓고 걸어보면 똑같으면
+   앱 전체를 못 믿게 되니까요. 그래서 사람이 알아챌 만한 최소 차이를 정해두고,
+   그 아래면 순위 대신 "차이 없음"을 말합니다.
+   임계값은 보수적으로 잡았습니다 — 애매하면 "비슷하다"고 말하는 편이 낫습니다. */
+/* 사람이 알아챌 만한 최소 차이. maxgrade와 sidewalk는 나중에 추가했습니다 —
+   총 오르막이 같아도 15% 급경사 구간이 있으면 확실히 다르게 느껴지고,
+   보도가 있는 길과 없는 길도 걷는 느낌이 다릅니다. */
+const FELT={stairs:50, ascent:20, walkway:20, arterial:20, cross:3, maxgrade:5, sidewalk:30};
+const FELT_LABEL={stairs:'계단',ascent:'오르막',walkway:'산책로 비율',arterial:'큰길 비율',cross:'횡단보도',maxgrade:'최대 경사',sidewalk:'보도 구간'};
+function feltDiff(c,ref){
+  if(!c||!ref||c===ref) return [];
+  return Object.keys(FELT).filter(k=>Math.abs(c.m[k]-ref.m[k])>=FELT[k]);
+}
+/* 비교 기준은 "아무 조건 없이 갔을 때의 길" — 즉 가장 짧은 후보 */
+function baseRoute(){ return pool.reduce((m,c)=>c.km<m.km?c:m,pool[0]); }
 
 /* ── 그리기 ───────────────────────────────────── */
 function clearLines(){ lines.forEach(l=>map.removeLayer(l)); lines=[]; }
@@ -638,17 +870,32 @@ async function search(force){
   setMin(false,false);   /* 새 결과가 나올 땐 펼쳐서 보여줍니다 */
   render();
   try{
-    const all=walkMode ? await generateLoops(n=>render(n)) : await buildPool(n=>render(n));
+    /* 다 모일 때까지 빈 화면을 보여주지 않습니다 — 측정이 끝난 것부터 바로 지도에 올려요.
+       전체 소요시간은 그대로지만 첫 경로가 3~4초면 보이기 시작합니다. */
+    loadingN=0;
+    const onProg=n=>{ loadingN=n; render(n); };
+    const onCand=c=>{ pool.push(c); rank(); drawRoutes(pool.length===1); render(loadingN); };
+    const all=walkMode ? await generateLoops(onProg,onCand) : await buildPool(onProg,onCand);
     if(!all.length) throw new Error(walkMode?'산책 코스를 만들지 못했습니다':'경로를 찾지 못했습니다');
     pool=all.filter(c=>c.measured);
     dropped=all.length-pool.length;
     if(!pool.length) throw new Error('경로의 지형 정보를 읽지 못했습니다');
     rank(); drawRoutes(true); render();
+    await refineAscent(ranked[0]);   /* 1위 경로의 오르막만 정확히 다시 재서 표시 */
+    rank(); render();
   }catch(e){
     pool=[]; ranked=[];
-    $('body').innerHTML=`<div class="msg"><b>경로를 만들지 못했어요</b>
-      ${e.message}<br>두 지점이 너무 멀거나(도보 100km 초과), 공개 서버가 잠시 바쁠 수 있어요.<br>
-      잠시 뒤 다시 시도해 주세요.</div>`;
+    const net=/서버|연결|응답/.test(e.message||'');
+    $('body').innerHTML=`<div class="msg">
+      <b>${net?'경로 서버가 지금 응답하지 않아요':'경로를 만들지 못했어요'}</b>
+      ${net
+        ? `${lastNetError||e.message}<br><br>이 앱은 무료 공개 서버(FOSSGIS Valhalla)를 쓰는데,
+           가끔 몇 분씩 멈춥니다. 앱 문제가 아니라 서버 쪽 상황이에요.<br>
+           잠시 뒤 다시 눌러보세요.`
+        : `${e.message}<br>두 지점이 너무 먼지(도보 100km 초과) 확인해 주세요.`}
+      <br><br><button class="cmpbtn" id="retryBtn" type="button" style="max-width:220px;margin:0 auto">
+        다시 시도</button></div>`;
+    const rb2=$('retryBtn'); if(rb2) rb2.onclick=()=>{ lastNetError=''; search(true); };
   }finally{ busy=false; }
 }
 
@@ -674,16 +921,22 @@ function render(loading){
     return;
   }
   if(!pool.length){
-    const total=walkMode?5:POOL.length;
+    const total=walkMode?5:MEASURE_MAX;
     body.innerHTML=`<div class="msg"><div class="spin"></div>
       <b>${loading?`${walkMode?'코스 만들고':'경로 찾고'} 지형 재는 중 · ${loading}/${total}`
                   :(walkMode?'산책 코스를 만드는 중':'경로 후보를 만드는 중')}</b>
       ${walkMode?`${minutes}분에 맞는 순환 코스를 방향을 바꿔가며 5개 만들고,`
-                :`서로 다른 ${POOL.length}가지 기준으로 길을 찾고,`}<br>
+                :`여러 기준으로 길을 찾아 가장 다른 ${MEASURE_MAX}개를 고르고,`}<br>
       각 경로의 계단·오르막·도로 등급·횡단보도를 OSM에서 읽고 있어요.</div>`;
     return;
   }
-  body.innerHTML = tab==='r' ? routeHTML() : weightHTML();
+  const total=walkMode?5:MEASURE_MAX;
+  const loadingBar = (busy&&loading&&loading<total)
+    ? `<div class="note" style="margin:0 0 8px;display:flex;align-items:center;gap:8px">
+        <span class="spin" style="width:14px;height:14px;margin:0;border-width:2px"></span>
+        아직 찾는 중 · ${loading}/${total} — 나오는 대로 먼저 보여드려요</div>`
+    : '';
+  body.innerHTML = loadingBar + (tab==='r' ? routeHTML() : weightHTML());
   bind();
 }
 
@@ -714,6 +967,20 @@ function routeHTML(){
        :'네 명 모두 다른 길을 골랐어요.'}</div>`;
   }
 
+  /* 추천 경로가 "그냥 최단 경로"와 느낄 만큼 다른지 먼저 말해줍니다 */
+  if(!walkMode&&pool.length>1&&!busy){
+    const ref=baseRoute(), gain=feltDiff(ranked[0],ref);
+    h += gain.length
+      ? `<div class="note" style="margin-top:0;background:#e8f5ec;color:#0a7f43">
+          <b>가장 짧은 길과 확실히 다릅니다</b> —
+          ${gain.map(k=>`${FELT_LABEL[k]} ${ref.m[k]}→${ranked[0].m[k]}${k==='stairs'||k==='ascent'?'m':(k==='cross'?'개':'%')}`).join(' · ')}.
+          걸어보면 느껴지는 수준의 차이예요.</div>`
+      : `<div class="note" style="margin-top:0">
+          <b>이 구간은 어느 길로 가도 비슷해요</b> —
+          후보 ${pool.length}개를 재봤지만 계단·오르막·큰길·횡단보도 어느 쪽도
+          걸을 때 알아챌 만큼 차이나지 않습니다. 아래 순위는 참고만 하세요.
+          이럴 땐 그냥 익숙한 길로 가셔도 됩니다.</div>`;
+  }
   h+=`<div class="sec">${prof.emoji} ${prof.label} 기준 · ${walkMode?`산책 코스 ${pool.length}개`:`후보 ${pool.length}개 중`}</div>`;
   ranked.forEach((c,i)=>{
     const ff=fmt(c), on=i===sel;
@@ -721,7 +988,7 @@ function routeHTML(){
     const traits=walkMode?courseTraits(c):null;
     const mets=[
       c.m.stairs>0 ?`계단 ${c.m.stairs}m`:'계단 없음',
-      `오르막 ${c.m.ascent}m`,
+      `오르막 ${c.m.ascentApprox?'약 ':''}${c.m.ascent}m`,
       `산책로 ${c.m.walkway}%`,
       `큰길 ${c.m.arterial}%`,
       `횡단보도 ${c.m.cross}개`,
@@ -770,7 +1037,8 @@ function why(c){
     quiet  :`큰길 비율 ${c.m.arterial}%`,
     safe   :`횡단보도 ${c.m.cross}개`,
     fast   :`${c.km.toFixed(2)}km`,
-    easy   :`꺾임 ${c.turns}번`
+    easy   :`꺾임 ${c.turns}번`,
+    ground :`비포장 ${c.m.rough}%`
   };
   return `<em>${prof.label}</em>에게 중요한 ` +
     top.map(x=>`<em>${x.a.name}</em>(${detail[x.a.k]})`).join('과 ') +
@@ -809,8 +1077,11 @@ function weightHTML(){
       <em>우회 상한</em> · 최단 후보(${minKm.toFixed(2)}km)의 <em>${prof.detour}배</em>인
       ${(minKm*prof.detour).toFixed(2)}km를 넘으면 감점합니다.<br>
       ${prof.stairCap
-        ? `<em>계단 상한</em> · 계단 <em>${prof.stairCap}m</em>를 넘으면 감점합니다.`
-        : `<em>계단 상한</em> · 없음 (계단을 감수합니다)`}
+        ? `<em>계단 상한</em> · 계단 <em>${prof.stairCap}m</em>를 넘으면 감점합니다.<br>`
+        : `<em>계단 상한</em> · 없음 (계단을 감수합니다)<br>`}
+      ${prof.crossCap
+        ? `<em>건널목 상한</em> · 1km당 <em>${prof.crossCap}번</em>을 넘으면 감점합니다.`
+        : `<em>건널목 상한</em> · 없음`}
     </div>
     <div class="mets">${pool.filter(c=>c.pen<1).length
       ? pool.filter(c=>c.pen<1).map(c=>`<span class="met bad">${c.km.toFixed(2)}km 후보 ${Math.round((1-c.pen)*100)}% 감점</span>`).join('')
