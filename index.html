@@ -127,7 +127,10 @@ body{
   background:#e0dedb;border-radius:99px;outline:none}
 .axrow input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;
   border-radius:50%;background:#fff;border:2px solid var(--accent);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2)}
-.axrow .w{font-size:10.5px;font-weight:800;width:26px;text-align:right;flex:none;color:#55555a}
+.lvset{display:flex;gap:4px;flex:1}
+.lvb{flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 4px;
+  font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;color:#77777c}
+.lvb.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .raw{font-size:10.5px;color:var(--sub);font-weight:600;margin-top:3px}
 
 .sec{font-size:11px;font-weight:800;color:var(--sub);letter-spacing:.03em;margin:14px 0 7px}
@@ -141,6 +144,21 @@ body{
 
 .pin{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
   font-size:11px;box-shadow:0 2px 8px rgba(0,0,0,.3);border:2px solid #fff;color:#fff}
+/* 현위치 버튼 — 시트 위에 떠 있고, 시트를 접으면 같이 내려옵니다 */
+.locbtn{position:absolute;right:12px;z-index:620;width:44px;height:44px;border-radius:50%;
+  border:0;background:var(--glass-strong);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  box-shadow:var(--shadow);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  bottom:calc(12px + env(safe-area-inset-bottom));transition:bottom .3s cubic-bezier(.32,.72,0,1)}
+.sheet.show ~ .locbtn{bottom:calc(12px + var(--sheetH,0px) + env(safe-area-inset-bottom))}
+.locico{font-size:21px;line-height:1;color:var(--ink)}
+.locbtn.on .locico{color:var(--accent)}
+.locbtn.busy .locico{opacity:.35}
+.locring{position:absolute;inset:5px;border-radius:50%;border:2px solid var(--accent);
+  opacity:0;transform:scale(.7)}
+.locbtn.busy .locring{animation:lpulse 1.1s ease-out infinite}
+@keyframes lpulse{0%{opacity:.7;transform:scale(.7)}100%{opacity:0;transform:scale(1.15)}}
+.medot{width:16px;height:16px;border-radius:50%;background:#1a73e8;border:2.5px solid #fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.15),0 2px 6px rgba(0,0,0,.3)}
 .toast{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(66dvh + 8px);z-index:700;
   background:rgba(27,27,29,.9);color:#fff;font-size:12px;font-weight:600;padding:8px 14px;
   border-radius:99px;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
@@ -184,10 +202,12 @@ body{
   <div class="peek" id="peek"></div>
   <div class="tabs">
     <button class="tab on" data-t="r" type="button">추천 경로</button>
-    <button class="tab" data-t="w" type="button">가중치 · 측정값</button>
+    <button class="tab" data-t="w" type="button">내 취향 맞추기</button>
   </div>
   <div class="bodyw" id="body"></div>
 </div>
+<button class="locbtn" id="locBtn" type="button" aria-label="현위치">
+  <span class="locring"></span><span class="locico">⌖</span></button>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -225,19 +245,28 @@ const $=i=>document.getElementById(i);
    spd: 이 동행자의 실제 보행 속도(km/h).
         같은 길이라도 부모님과 혼자는 소요시간이 달라야 하므로,
         Valhalla가 준 시간을 쓰지 않고 여기서 다시 계산합니다. */
+/* 중요도를 0~100 슬라이더로 두었더니 "왜 82인가"를 아무도 설명할 수 없었습니다.
+   실제로 사람이 구분할 수 있는 건 "중요하다/보통이다/별로다" 정도라서 3단계로 바꿨습니다.
+   값은 0.2 / 0.6 / 1.0 — 지금까지 실측으로 맞춰온 값들(1.0, .95, .65, .55, .2)에
+   가장 가깝게 떨어지도록 고른 간격이라, 3단계로 바꿔도 추천 결과가 거의 그대로입니다. */
+const LV={low:.2, mid:.6, high:1.0};
+const LV_LABEL={low:'낮음', mid:'중간', high:'높음'};
+const LV_ORDER=['low','mid','high'];
+const numW=w=>{const o={}; for(const k in w) o[k]=(typeof w[k]==='string')?LV[w[k]]:w[k]; return o;};
+
 const PROFILES={
   /* 연인과 반려동물이 8구간 중 7곳에서 같은 길을 골랐습니다. 둘 다 "차 없는 산책로"를
      쫓기 때문인데, 실제로는 갈리는 지점이 있습니다. 연인은 전망을 위해 계단이나 언덕을
      감수하고 오래 걸어도 되지만, 개는 계단을 싫어하고 흙·풀 바닥을 좋아하며 오래 걸으면
      지칩니다. 그 차이를 comfort/ground/detour로 벌렸습니다. */
   lover :{key:'lover', label:'연인',   emoji:'💕', color:'#FF4B6E', spd:4.3, detour:1.60,
-    w:{comfort:.20, charm:.95, quiet:.80, safe:.35, fast:.10, easy:.10, ground:.05},
+    w:{comfort:'low', charm:'high', quiet:'high', safe:'low', fast:'low', easy:'low', ground:'low'},
     line:'예쁜 길로 천천히. 전망이 좋으면 계단이나 언덕도 감수합니다.'},
   /* fast를 .15로 두었더니 이태원→남산에서 4.8km·90분짜리를 추천했습니다.
      계단만 적으면 아무리 돌아가도 괜찮다는 뜻이 되어버려서, 부모님에게는
      "우회 거리 자체가 부담"이라는 점을 .45로 반영했습니다. */
   parent:{key:'parent',label:'부모님', emoji:'👪', color:'#007AFF', spd:3.2, detour:1.25, stairCap:30,
-    w:{comfort:1.0, charm:.35, quiet:.65, safe:.85, fast:.45, easy:.40, ground:.00},
+    w:{comfort:'high', charm:'low', quiet:'mid', safe:'high', fast:'mid', easy:'mid', ground:'low'},
     line:'계단과 오르막을 먼저 피하되, 크게 돌아가지 않는 쪽을 고릅니다.'},
   /* fast를 .95로 두면 혼자 모드는 언제나 최단 경로를 고릅니다. 그런데 최단 경로는
      네이버 지도가 이미 주는 것이라, 그 설정에서는 이 앱을 쓸 이유가 없어집니다.
@@ -246,7 +275,7 @@ const PROFILES={
      혼자 걷는 사람도 최단이 목적이면 다른 앱을 쓸 테니, 여기서는
      "빠르되 삭막하지 않은 길"로 다시 잡았습니다. detour 상한이 1.15라 크게 돌지는 않습니다. */
   solo  :{key:'solo',  label:'혼자',   emoji:'🚶', color:'#F59E0B', spd:5.6, detour:1.15,
-    w:{comfort:.20, charm:.55, quiet:.55, safe:.45, fast:.65, easy:.55, ground:.20},
+    w:{comfort:'low', charm:'mid', quiet:'mid', safe:'mid', fast:'mid', easy:'mid', ground:'low'},
     line:'크게 돌지 않으면서도 삭막하지 않은 길을 고릅니다.'},
   /* safe를 .70으로 두었을 때 해운대에서 횡단보도 18개짜리를 골라 .95로 올렸는데,
      그래도 분당에서 19개짜리가 나왔습니다. 원인은 가중치가 아니라 지형이었습니다 —
@@ -257,7 +286,7 @@ const PROFILES={
      대신 극단만 막도록 km당 건널목 상한을 둡니다. 문구도 실제 동작에 맞췄습니다. */
   pet   :{key:'pet',   label:'반려동물',emoji:'🐾', color:'#10B981', spd:3.8, detour:1.30,
     stairCap:60, crossCap:6,
-    w:{comfort:.55, charm:.55, quiet:.95, safe:.95, fast:.40, easy:.25, ground:.70},
+    w:{comfort:'mid', charm:'mid', quiet:'high', safe:'high', fast:'mid', easy:'low', ground:'high'},
     line:'차도를 먼저 피하고 산책로 위주로 고릅니다. 대신 건널목은 늘 수 있어요 — 조용한 공원길이 큰 블록을 가로지르는 동네가 많습니다.'}
 };
 
@@ -268,7 +297,7 @@ const AXES=[
   {k:'comfort',name:'편안함',  desc:'계단·오르막이 적은',   src:'계단 길이 + 누적 오르막 + 최대 경사 + 노면'},
   {k:'charm',  name:'걷는 맛', desc:'차 없는 산책로 위주',  src:'보행자 전용길·공원길 비율'},
   {k:'quiet',  name:'한적함',  desc:'큰 찻길을 피하는',     src:'큰길 비율 + 주변 밀집도'},
-  {k:'safe',   name:'안전함',  desc:'횡단보도가 적은',      src:'횡단보도 수 + 보도 있는 구간 비율'},
+  {k:'safe',   name:'안전함',  desc:'건널목이 적은',      src:'건널목 수 + 보도 있는 구간 비율'},
   {k:'fast',   name:'빠름',    desc:'돌아가지 않는',        src:'전체 보행 거리'},
   {k:'easy',   name:'쉬움',    desc:'길이 단순한',          src:'꺾이는 횟수'},
   /* 노면은 측정만 해두고 안 쓰고 있었습니다. 그런데 평지에서 부모님과 혼자를
@@ -581,8 +610,8 @@ function courseTraits(c){
   if(c.m.walkway>=45 && c.m.walkway===hi(x=>x.m.walkway)) t.push('산책로 위주');
   if(c.m.arterial>=25 && c.m.arterial===hi(x=>x.m.arterial)) t.push('큰길가');
   else if(c.m.arterial<=8 && c.m.walkway<45)        t.push('한적한 골목');
-  if(c.m.cross>=5 && cr(c)===hi(cr))                t.push('횡단보도 많음');
-  else if(c.m.cross===0)                            t.push('횡단보도 없음');
+  if(c.m.cross>=5 && cr(c)===hi(cr))                t.push('건널목 많음');
+  else if(c.m.cross===0)                            t.push('건널목 없음');
   if(c.turns/Math.max(c.km,.01)<=5)                 t.push('길 단순함');
   const out=t.length?t.slice(0,3):['무난한 코스'];
   /* 삼각 루프는 목표 거리에 정확히 맞지 않습니다. 강이나 막힌 지형에 경유지가
@@ -754,20 +783,43 @@ function crossPenalty(c,p){
   return over<=0 ? 1 : Math.max(.35,1-over/p.crossCap);
 }
 function scoreOf(c,p,w){
-  const den=Object.values(w).reduce((s,v)=>s+v,0)||1;
-  const base=AXES.reduce((s,a)=>s+c.ax[a.k]*w[a.k],0)/den;
+  const nw=numW(w);
+  const den=Object.values(nw).reduce((s,v)=>s+v,0)||1;
+  const base=AXES.reduce((s,a)=>s+c.ax[a.k]*nw[a.k],0)/den;
   return base*detourPenalty(c,p)*stairPenalty(c,p)*crossPenalty(c,p);
+}
+/* 동점 처리 ─────────────────────────────────
+   3단계로 바꾸면 서로 다른 경로가 같은 점수를 받는 일이 늘어납니다.
+   그때 배열 순서(=요청이 돌아온 순서)로 1등이 정해지면, 같은 조건에서 새로고침만 해도
+   추천이 바뀝니다. 그래서 순서대로 세 가지를 더 봅니다.
+     1) 이 동행자가 '높음'으로 둔 항목에서 더 나은 쪽
+     2) 그래도 같으면 짧은 쪽 (덜 걷는 게 이득)
+     3) 그래도 같으면 덜 꺾이는 쪽 (헷갈릴 일이 적음)
+   여기까지 같으면 두 길은 실제로 대등한 것이므로, 어느 쪽을 줘도 무방합니다. */
+function compareFor(a,b,w){
+  const d=b.score-a.score;
+  if(Math.abs(d)>0.005) return d;
+  const hi=AXES.filter(x=>w[x.k]==='high'||numW(w)[x.k]>=1);
+  if(hi.length){
+    const avg=c=>hi.reduce((s,x)=>s+c.ax[x.k],0)/hi.length;
+    const d2=avg(b)-avg(a);
+    if(Math.abs(d2)>0.01) return d2;
+  }
+  if(Math.abs(a.km-b.km)>0.05) return a.km-b.km;
+  return a.turns-b.turns;
 }
 function rank(){
   if(!pool.length) return;
   axisScores();
   pool.forEach(c=>{ c.pen=detourPenalty(c,prof)*stairPenalty(c,prof)*crossPenalty(c,prof); c.score=scoreOf(c,prof,weights); });
-  ranked=[...pool].sort((a,b)=>b.score-a.score);
+  ranked=[...pool].sort((a,b)=>compareFor(a,b,weights));
   sel=0;
 }
 /* 각 동행자가 이 후보 풀에서 무엇을 고르는지 — 4인 비교용 */
 function bestFor(p){
-  return pool.map(c=>({c,s:scoreOf(c,p,p.w)})).sort((x,y)=>y.s-x.s)[0].c;
+  const scored=pool.map(c=>({...c,score:scoreOf(c,p,p.w)}));
+  scored.sort((a,b)=>compareFor(a,b,p.w));
+  return pool.find(c=>c.shape===scored[0].shape);
 }
 
 /* ── 체감 판정 ─────────────────────────────────
@@ -781,7 +833,7 @@ function bestFor(p){
    총 오르막이 같아도 15% 급경사 구간이 있으면 확실히 다르게 느껴지고,
    보도가 있는 길과 없는 길도 걷는 느낌이 다릅니다. */
 const FELT={stairs:50, ascent:20, walkway:20, arterial:20, cross:3, maxgrade:5, sidewalk:30};
-const FELT_LABEL={stairs:'계단',ascent:'오르막',walkway:'산책로 비율',arterial:'큰길 비율',cross:'횡단보도',maxgrade:'최대 경사',sidewalk:'보도 구간'};
+const FELT_LABEL={stairs:'계단',ascent:'오르막',walkway:'산책로 비율',arterial:'큰길 비율',cross:'건널목',maxgrade:'최대 경사',sidewalk:'보도 구간'};
 function feltDiff(c,ref){
   if(!c||!ref||c===ref) return [];
   return Object.keys(FELT).filter(k=>Math.abs(c.m[k]-ref.m[k])>=FELT[k]);
@@ -887,9 +939,9 @@ async function search(force){
     pool=[]; ranked=[];
     const net=/서버|연결|응답/.test(e.message||'');
     $('body').innerHTML=`<div class="msg">
-      <b>${net?'경로 서버가 지금 응답하지 않아요':'경로를 만들지 못했어요'}</b>
+      <b>${net?'길 찾기 서버가 지금 응답하지 않아요':'길을 찾지 못했어요'}</b>
       ${net
-        ? `${lastNetError||e.message}<br><br>이 앱은 무료 공개 서버(FOSSGIS Valhalla)를 쓰는데,
+        ? `${lastNetError||e.message}<br><br>이 앱은 무료 공개 지도 서버를 쓰는데,
            가끔 몇 분씩 멈춥니다. 앱 문제가 아니라 서버 쪽 상황이에요.<br>
            잠시 뒤 다시 눌러보세요.`
         : `${e.message}<br>두 지점이 너무 먼지(도보 100km 초과) 확인해 주세요.`}
@@ -926,15 +978,15 @@ function render(loading){
       <b>${loading?`${walkMode?'코스 만들고':'경로 찾고'} 지형 재는 중 · ${loading}/${total}`
                   :(walkMode?'산책 코스를 만드는 중':'경로 후보를 만드는 중')}</b>
       ${walkMode?`${minutes}분에 맞는 순환 코스를 방향을 바꿔가며 5개 만들고,`
-                :`여러 기준으로 길을 찾아 가장 다른 ${MEASURE_MAX}개를 고르고,`}<br>
-      각 경로의 계단·오르막·도로 등급·횡단보도를 OSM에서 읽고 있어요.</div>`;
+                :`여러 기준으로 길을 찾아 서로 가장 다른 ${MEASURE_MAX}개를 고르고,`}<br>
+      각 길의 계단·오르막·큰길·건널목을 지도에서 읽고 있어요.</div>`;
     return;
   }
   const total=walkMode?5:MEASURE_MAX;
   const loadingBar = (busy&&loading&&loading<total)
     ? `<div class="note" style="margin:0 0 8px;display:flex;align-items:center;gap:8px">
         <span class="spin" style="width:14px;height:14px;margin:0;border-width:2px"></span>
-        아직 찾는 중 · ${loading}/${total} — 나오는 대로 먼저 보여드려요</div>`
+        아직 찾는 중 · ${loading}/${total} — 다 된 것부터 먼저 보여드려요</div>`
     : '';
   body.innerHTML = loadingBar + (tab==='r' ? routeHTML() : weightHTML());
   bind();
@@ -972,16 +1024,16 @@ function routeHTML(){
     const ref=baseRoute(), gain=feltDiff(ranked[0],ref);
     h += gain.length
       ? `<div class="note" style="margin-top:0;background:#e8f5ec;color:#0a7f43">
-          <b>가장 짧은 길과 확실히 다릅니다</b> —
+          <b>가장 짧은 길과 확실히 달라요</b> —
           ${gain.map(k=>`${FELT_LABEL[k]} ${ref.m[k]}→${ranked[0].m[k]}${k==='stairs'||k==='ascent'?'m':(k==='cross'?'개':'%')}`).join(' · ')}.
-          걸어보면 느껴지는 수준의 차이예요.</div>`
+          걸어보면 알아챌 만한 차이예요.</div>`
       : `<div class="note" style="margin-top:0">
           <b>이 구간은 어느 길로 가도 비슷해요</b> —
-          후보 ${pool.length}개를 재봤지만 계단·오르막·큰길·횡단보도 어느 쪽도
-          걸을 때 알아챌 만큼 차이나지 않습니다. 아래 순위는 참고만 하세요.
-          이럴 땐 그냥 익숙한 길로 가셔도 됩니다.</div>`;
+          길 ${pool.length}개를 재봤지만 계단·오르막·큰길·건널목 어느 것도
+          걸을 때 알아챌 만큼 차이나지 않아요. 아래 순위는 참고만 하세요 —
+          이럴 땐 그냥 익숙한 길로 가셔도 돼요.</div>`;
   }
-  h+=`<div class="sec">${prof.emoji} ${prof.label} 기준 · ${walkMode?`산책 코스 ${pool.length}개`:`후보 ${pool.length}개 중`}</div>`;
+  h+=`<div class="sec">${prof.emoji} ${prof.label}에게 맞는 순서 · ${walkMode?`산책 코스 ${pool.length}개`:`찾은 길 ${pool.length}개`}</div>`;
   ranked.forEach((c,i)=>{
     const ff=fmt(c), on=i===sel;
     /* 산책 모드는 "몇 순위"보다 "어떤 성격의 코스"가 중요합니다 */
@@ -991,7 +1043,7 @@ function routeHTML(){
       `오르막 ${c.m.ascentApprox?'약 ':''}${c.m.ascent}m`,
       `산책로 ${c.m.walkway}%`,
       `큰길 ${c.m.arterial}%`,
-      `횡단보도 ${c.m.cross}개`,
+      `건널목 ${c.m.cross}개`,
       `꺾임 ${c.turns}번`
     ];
     const cls=[
@@ -1013,88 +1065,85 @@ function routeHTML(){
         ${c.pen<1?`<span class="met bad">상한 초과 ${Math.round((1-c.pen)*100)}% 감점</span>`:''}</div>
     </div>`;
   });
-  h+=`<div class="note">거리는 Valhalla가 계산한 실제 보행 경로이고, 계단·오르막·도로 등급·횡단보도는
-    그 경로 위의 OSM 데이터를 직접 읽어 센 값입니다. 소요시간만 ${prof.label} 보행 속도
-    ${prof.spd}km/h로 다시 계산했습니다.
-    ${dropped?`<br><br>후보 ${dropped}개는 지형 정보를 읽지 못해 순위에서 제외했어요.
-      측정 실패를 "계단 0m"로 오해하면 그 경로가 1등이 되어버리기 때문입니다.`:''}
+  h+=`<div class="note">거리는 실제 걸어갈 수 있는 길로 계산했고, 계단·오르막·큰길·건널목은
+    그 길 위의 지도 데이터를 하나하나 읽어 센 값이에요. 소요시간만 ${prof.label} 걸음
+    ${prof.spd}km/h로 다시 계산했어요.
+    ${dropped?`<br><br>길 ${dropped}개는 지형 정보를 못 읽어서 순위에서 뺐어요.
+      못 읽은 걸 "계단 0m"로 착각하면 그 길이 1등이 되어버리거든요.`:''}
     <br><br>검색에 10~20초 걸리는 건 공개 데모 서버(FOSSGIS)를 쓰기 때문입니다.
-    후보 하나마다 경로·지형·고도를 각각 요청해 총 20여 번을 호출하는데, 동시 요청이
-    4개를 넘으면 서버가 거절해서 더 빠르게 만들 수 없어요. Valhalla를 직접 띄우면
-    이 제한이 사라집니다.</div>`;
+    길 하나마다 지형을 따로 물어봐야 해서 한 번 찾을 때 15번 넘게 요청이 오가는데,
+    무료 서버가 동시에 4개까지만 받아줘요. 서버를 직접 띄우면 몇 초로 줄어들어요.</div>`;
   return h;
 }
 
 /* 왜 이 경로인가 — 후보 풀 평균과 비교해 두드러진 축 2개를 문장으로 */
 function why(c){
   const avg=k=>pool.reduce((s,x)=>s+x.ax[k],0)/pool.length;
-  const gaps=AXES.map(a=>({a,g:(c.ax[a.k]-avg(a.k))*weights[a.k]})).sort((x,y)=>y.g-x.g);
+  const nw=numW(weights);
+  const gaps=AXES.map(a=>({a,g:(c.ax[a.k]-avg(a.k))*nw[a.k]})).sort((x,y)=>y.g-x.g);
   const top=gaps.filter(x=>x.g>0.02).slice(0,2);
-  if(!top.length) return `후보들 사이에 뚜렷한 차이가 없어, 균형이 가장 나은 길을 골랐어요.`;
+  if(!top.length) return `길들 사이에 뚜렷한 차이가 없어서, 전체적으로 무난한 쪽을 골랐어요.`;
   const detail={
     comfort:`계단 ${c.m.stairs}m · 오르막 ${c.m.ascent}m`,
     charm  :`산책로 비율 ${c.m.walkway}%`,
     quiet  :`큰길 비율 ${c.m.arterial}%`,
-    safe   :`횡단보도 ${c.m.cross}개`,
+    safe   :`건널목 ${c.m.cross}개`,
     fast   :`${c.km.toFixed(2)}km`,
     easy   :`꺾임 ${c.turns}번`,
     ground :`비포장 ${c.m.rough}%`
   };
   return `<em>${prof.label}</em>에게 중요한 ` +
     top.map(x=>`<em>${x.a.name}</em>(${detail[x.a.k]})`).join('과 ') +
-    ` 쪽이 다른 후보보다 좋아서 골랐어요.`;
+    ` 쪽이 다른 길보다 좋아서 골랐어요.`;
 }
 
 function weightHTML(){
   const c=ranked[sel];
-  let h=`<div class="sec">이 경로의 축별 점수 · ${prof.emoji} ${prof.label}</div>`;
-  h+=`<div class="note" style="margin-top:0;margin-bottom:10px">막대는 <b>후보 ${pool.length}개 안에서의 상대 점수</b>입니다.
-    100점은 "이 구간에서 고를 수 있는 것 중 가장 좋음"이지, 절대 기준이 아니에요.<br>
-    슬라이더를 움직이면 <b>서버 재요청 없이 즉시</b> 순위가 다시 매겨집니다.</div>`;
+  let h=`<div class="sec">이 길이 ${prof.emoji} ${prof.label}에게 얼마나 맞나</div>`;
+  h+=`<div class="note" style="margin-top:0;margin-bottom:10px">막대는 <b>지금 찾은 ${pool.length}개 길 중에서의 상대 평가</b>예요.
+    100점은 "이 구간에서 고를 수 있는 것 중 제일 낫다"는 뜻이지, 어디서나 통하는 절대 점수는 아니에요.<br>
+    아래에서 무엇을 중요하게 볼지 바꾸면 <b>기다림 없이 바로</b> 순위가 다시 매겨져요.</div>`;
   AXES.forEach(a=>{
-    const v=Math.round(c.ax[a.k]*100), w=weights[a.k];
+    const v=Math.round(c.ax[a.k]*100), lv=weights[a.k];
     h+=`<div class="axis">
       <div class="axhd">
         <span class="axname">${a.name}</span>
         <span class="axdesc">${a.desc}</span>
         <span class="axval">${v}점</span>
       </div>
-      <div class="axbar"><div class="axfill" style="width:${v}%;opacity:${.35+w*.65}"></div></div>
+      <div class="axbar"><div class="axfill" style="width:${v}%;opacity:${.35+(LV[lv]||.2)*.65}"></div></div>
       <div class="axrow">
         <label>중요도</label>
-        <input type="range" min="0" max="100" value="${Math.round(w*100)}" data-w="${a.k}">
-        <span class="w">${Math.round(w*100)}</span>
+        <span class="lvset">${LV_ORDER.map(k=>
+          `<button type="button" class="lvb ${k===lv?'on':''}" data-w="${a.k}" data-lv="${k}">${LV_LABEL[k]}</button>`).join('')}</span>
       </div>
-      <div class="raw">측정 기준 · ${a.src}</div>
+      <div class="raw">이렇게 쟀어요 · ${a.src}</div>
     </div>`;
   });
-  /* 슬라이더로 표현되지 않는 두 개의 절대 규칙도 같이 보여줍니다.
-     이게 숨어 있으면 "왜 저 경로가 빠졌지?"를 설명할 수 없습니다. */
   const minKm=Math.min(...pool.map(x=>x.km));
-  h+=`<div class="sec">가중치와 별개로 적용되는 상한</div>`;
+  h+=`<div class="sec">중요도와 상관없이 무조건 지키는 것</div>`;
   h+=`<div class="rcard" style="cursor:default">
     <div class="rwhy" style="margin-top:0">
-      <em>우회 상한</em> · 최단 후보(${minKm.toFixed(2)}km)의 <em>${prof.detour}배</em>인
-      ${(minKm*prof.detour).toFixed(2)}km를 넘으면 감점합니다.<br>
+      <em>너무 돌아가지 않기</em> · 가장 짧은 길(${minKm.toFixed(2)}km)의
+      <em>${prof.detour}배</em>인 ${(minKm*prof.detour).toFixed(2)}km를 넘으면 감점해요.<br>
       ${prof.stairCap
-        ? `<em>계단 상한</em> · 계단 <em>${prof.stairCap}m</em>를 넘으면 감점합니다.<br>`
-        : `<em>계단 상한</em> · 없음 (계단을 감수합니다)<br>`}
+        ? `<em>계단</em> · <em>${prof.stairCap}m</em>를 넘으면 감점해요.<br>`
+        : `<em>계단</em> · 제한 없음 (전망이 좋으면 감수해요)<br>`}
       ${prof.crossCap
-        ? `<em>건널목 상한</em> · 1km당 <em>${prof.crossCap}번</em>을 넘으면 감점합니다.`
-        : `<em>건널목 상한</em> · 없음`}
+        ? `<em>건널목</em> · 1km에 <em>${prof.crossCap}번</em>을 넘으면 감점해요.`
+        : `<em>건널목</em> · 제한 없음`}
     </div>
-    <div class="mets">${pool.filter(c=>c.pen<1).length
-      ? pool.filter(c=>c.pen<1).map(c=>`<span class="met bad">${c.km.toFixed(2)}km 후보 ${Math.round((1-c.pen)*100)}% 감점</span>`).join('')
-      : '<span class="met good">감점된 후보 없음</span>'}</div>
+    <div class="mets">${pool.filter(x=>x.pen<1).length
+      ? pool.filter(x=>x.pen<1).map(x=>`<span class="met bad">${x.km.toFixed(2)}km 길 ${Math.round((1-x.pen)*100)}% 감점</span>`).join('')
+      : '<span class="met good">감점된 길 없음</span>'}</div>
   </div>`;
   h+=`<button class="cmpbtn" id="resetW" type="button">${prof.label} 기본값으로 되돌리기</button>`;
   h+=`<div class="note">${prof.line}<br><br>
-    <b>이 MVP가 확인하려는 것</b> — 같은 출발·도착이라도 동행자에 따라 다른 길이 나오는가,
-    그리고 그 차이를 지어낸 말이 아니라 실측 수치로 설명할 수 있는가.
-    가볼 만한 곳(POI) 추천은 범위에서 뺐습니다.</div>`;
+    <b>이 앱이 확인하려는 것</b> — 같은 출발·도착이라도 누구와 걷느냐에 따라 다른 길이 나오는가,
+    그리고 그 차이를 지어낸 말이 아니라 <b>실제로 잰 수치</b>로 설명할 수 있는가.
+    가볼 만한 곳 추천은 여기서 다루지 않아요.</div>`;
   return h;
 }
-
 function bind(){
   const cb=$('cmpBtn');
   if(cb) cb.onclick=()=>{cmpMode=!cmpMode;drawRoutes(true);render();};
@@ -1103,22 +1152,9 @@ function bind(){
   document.querySelectorAll('.rcard').forEach(el=>el.onclick=()=>{
     sel=+el.dataset.i; cmpMode=false; drawRoutes(false); render();
   });
-  document.querySelectorAll('input[data-w]').forEach(inp=>{
-    inp.oninput=e=>{
-      weights[e.target.dataset.w]=+e.target.value/100;
-      e.target.parentElement.querySelector('.w').textContent=e.target.value;
-      rank(); drawRoutes(false);
-      /* 슬라이더를 잡은 채로 전체를 다시 그리면 포커스가 끊기므로
-         막대만 즉시 갱신하고, 카드 목록은 손을 뗄 때 갱신합니다 */
-      const c=ranked[sel];
-      document.querySelectorAll('.axis').forEach((el,i)=>{
-        const v=Math.round(c.ax[AXES[i].k]*100);
-        el.querySelector('.axval').textContent=v+'점';
-        el.querySelector('.axfill').style.width=v+'%';
-        el.querySelector('.axfill').style.opacity=.35+weights[AXES[i].k]*.65;
-      });
-    };
-    inp.onchange=()=>{ rank(); drawRoutes(false); render(); };
+  document.querySelectorAll('.lvb').forEach(b=>b.onclick=()=>{
+    weights[b.dataset.w]=b.dataset.lv;
+    rank(); drawRoutes(false); render();
   });
   const rw=$('resetW');
   if(rw) rw.onclick=()=>{ weights={...prof.w}; rank(); drawRoutes(false); render(); };
@@ -1130,12 +1166,13 @@ function bind(){
 let sheetMin=false;
 function syncPeekH(){
   document.documentElement.style.setProperty('--peekH',peekH()+'px');
+  document.documentElement.style.setProperty('--sheetH',sheetCover()+'px');
 }
 function setMin(v,refit=true){
   sheetMin=v;
   $('sheet').classList.toggle('min',v);
   renderPeek();
-  syncPeekH();
+  requestAnimationFrame(syncPeekH);
   /* 접거나 펴면 보이는 지도 영역이 달라지므로 경로를 다시 맞춰줍니다 */
   if(refit&&ranked.length) setTimeout(()=>drawRoutes(true),320);
 }
@@ -1180,6 +1217,56 @@ $('peek').onclick=()=>setMin(!sheetMin);
 })();
 window.addEventListener('resize',syncPeekH);
 
+/* ── 현위치 ─────────────────────────────────────
+   Geolocation은 보안 컨텍스트(HTTPS 또는 localhost)에서만 동작합니다.
+   배포된 GitHub Pages는 HTTPS라 문제없지만, 파일을 그냥 더블클릭해 연 file:// 에서는
+   브라우저가 막습니다. 그 경우를 구분해서 안내합니다.
+
+   버튼 동작은 지금 무엇이 비어 있는지에 따라 달라집니다 — 출발지가 없으면 출발지로,
+   출발지만 있으면 도착지로, 둘 다 있으면 지도만 이동. 무엇을 했는지는 토스트로 알려줍니다. */
+let meMarker=null, meCircle=null, myPos=null;
+function showMe(pos,acc){
+  if(meMarker) map.removeLayer(meMarker);
+  if(meCircle) map.removeLayer(meCircle);
+  meMarker=L.marker(pos,{icon:L.divIcon({className:'',iconSize:[16,16],iconAnchor:[8,8],
+    html:'<div class="medot"></div>'}),zIndexOffset:900,interactive:false}).addTo(map);
+  if(acc&&acc>25) meCircle=L.circle(pos,{radius:acc,color:'#1a73e8',weight:1,
+    opacity:.35,fillColor:'#1a73e8',fillOpacity:.10,interactive:false}).addTo(map);
+}
+function locate(){
+  const btn=$('locBtn');
+  if(!navigator.geolocation){ toast('이 브라우저는 위치를 지원하지 않아요'); return; }
+  if(!window.isSecureContext){
+    toast('주소가 https:// 여야 위치를 쓸 수 있어요',3200); return;
+  }
+  btn.classList.add('busy');
+  navigator.geolocation.getCurrentPosition(p=>{
+    btn.classList.remove('busy'); btn.classList.add('on');
+    const ll=[p.coords.latitude,p.coords.longitude];
+    myPos=ll; showMe(ll,p.coords.accuracy);
+    const acc=Math.round(p.coords.accuracy);
+    if(!A){
+      if(mA) map.removeLayer(mA);
+      A=ll; mA=setMarker('A',ll); label('A','현위치');
+      pool=[];ranked=[];poolKey='';clearLines();
+      map.setView(ll,16);
+      if(walkMode){ toast(`현위치에서 시작해요 (오차 ${acc}m)`); search(); }
+      else { toast('현위치를 출발지로 정했어요 · 도착지를 눌러주세요',2600); render(); }
+    }else if(!B&&!walkMode){
+      B=ll; mB=setMarker('B',ll); label('B','현위치');
+      map.setView(ll,16); toast('현위치를 도착지로 정했어요'); search();
+    }else{
+      map.setView(ll,16); toast(`현위치 (오차 ${acc}m)`);
+    }
+  },err=>{
+    btn.classList.remove('busy');
+    toast(err.code===1?'위치 권한이 거부됐어요 — 브라우저 설정에서 허용해 주세요'
+         :err.code===3?'위치를 찾는 데 너무 오래 걸려요'
+         :'위치를 찾지 못했어요',3200);
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:30000});
+}
+$('locBtn').onclick=locate;
+
 /* ── 입력 ─────────────────────────────────────── */
 map.on('click',e=>{
   const ll=[e.latlng.lat,e.latlng.lng];
@@ -1203,6 +1290,7 @@ map.on('click',e=>{
 $('resetBtn').onclick=()=>{
   if(mA)map.removeLayer(mA); if(mB)map.removeLayer(mB);
   A=B=null;mA=mB=null;pool=[];ranked=[];poolKey='';clearLines();
+  $('locBtn').classList.remove('on');
   label('A',null);label('B',null);$('sheet').classList.remove('show');
   $('sres').classList.remove('on');render();
 };
