@@ -182,11 +182,6 @@ body{
     </div>
     <div class="sres" id="sres"></div>
     <div class="chips" id="chips"></div>
-    <div class="exs" id="exs">
-      <button class="ex" data-ex="0" type="button">성수역 → 서울숲</button>
-      <button class="ex" data-ex="1" type="button">이태원 → 남산 (차이 큼)</button>
-      <button class="ex" data-ex="2" type="button">경복궁 → 북촌</button>
-    </div>
     <div class="exs" id="mins" style="display:none">
       <span class="mlbl">얼마나 걸을까요</span>
       <button class="ex mn" data-m="15" type="button">15분</button>
@@ -322,12 +317,6 @@ const POOL=[
   ['계단·언덕 회피',{step_penalty:900, max_hiking_difficulty:0, use_hills:0, driveway_factor:12}],
   ['골목·주택가',  {use_living_streets:1, alley_factor:.35, walkway_factor:.6}],
   ['무계단 산책로',{step_penalty:900, use_hills:.1, walkway_factor:.25, use_living_streets:.8}]
-];
-
-const EXAMPLES=[
-  [[37.54455,127.05570],[37.54440,127.03740],'성수역 3번 출구','서울숲'],
-  [[37.53445,126.99429],[37.55118,126.98814],'이태원역','남산공원'],
-  [[37.57961,126.97704],[37.58278,126.98325],'경복궁','북촌한옥마을']
 ];
 
 /* ── 지도 ─────────────────────────────────────── */
@@ -502,9 +491,44 @@ async function routeOnly(name,opts,via){
           turns:Math.max(1,man-2*(d.trip.legs.length-1))};
 }
 
+/* 찾은 길 자체를 저장해 둡니다.
+   측정값만 캐시했을 때는 다시 찾아도 9번의 길찾기 요청이 그대로 나가서 1.5초밖에
+   못 줄였습니다. 같은 구간을 다시 보거나 새로고침했을 때 요청 없이 즉시 뜨게 하려면
+   길 자체를 들고 있어야 합니다. 서버가 죽어 있어도 한 번 본 구간은 계속 열립니다.
+   좌표는 약 10m 단위로 반올림해 키를 만듭니다 — 손가락으로 찍은 위치가 몇 m 달라도
+   같은 구간으로 봅니다. */
+const RT_KEY='walk-mvp-routes-v1';
+const routeCache=new Map();
+try{
+  const saved=JSON.parse(localStorage.getItem(RT_KEY)||'{}');
+  for(const k in saved) routeCache.set(k,saved[k]);
+}catch(e){}
+let rtTimer=null;
+function persistRoutes(){
+  clearTimeout(rtTimer);
+  rtTimer=setTimeout(()=>{
+    try{
+      const o={}; for(const [k,v] of [...routeCache.entries()].slice(-40)) o[k]=v;
+      localStorage.setItem(RT_KEY,JSON.stringify(o));
+    }catch(e){ try{ localStorage.removeItem(RT_KEY); }catch(_){} }
+  },900);
+}
+const rk=p=>p.map(v=>v.toFixed(4)).join(',');
+function routeKey(){ return `${rk(A)}|${rk(B)}`; }
+
 async function buildPool(onProgress,onCandidate){
   let done=0;
   const bySh=new Map();
+  /* 저장해 둔 길이 있으면 길찾기 요청을 통째로 건너뜁니다 */
+  const cached=routeCache.get(routeKey());
+  if(cached&&cached.length){
+    const picked=cached.map(c=>({...c,pts:decodePolyline(c.shape)}));
+    await limited(picked.map(c=>async()=>{
+      await measure(c); onProgress(++done);
+      if(c.measured) onCandidate(c);
+    }),4);
+    if(picked.some(c=>c.measured)) return picked;
+  }
   const add=list=>{ for(const c of list){ if(!c) continue;
     const hit=bySh.get(c.shape); if(hit){ hit.srcs.push(c.src); } else bySh.set(c.shape,c); } };
 
@@ -531,6 +555,8 @@ async function buildPool(onProgress,onCandidate){
   /* 가장 안 겹치는 것만 골라 측정.
      후보를 11개 만들어도 측정은 상한까지만 하므로 총 호출 수는 이전과 비슷합니다. */
   const picked=pickDiverse([...bySh.values()],MEASURE_MAX);
+  routeCache.set(routeKey(),picked.map(c=>({src:c.src,srcs:c.srcs,shape:c.shape,km:c.km,turns:c.turns})));
+  persistRoutes();
   await limited(picked.map(c=>async()=>{
     await measure(c);
     onProgress(++done);
@@ -965,10 +991,11 @@ function render(loading){
   if(walkMode? !A : (!A||!B)){
     body.innerHTML= walkMode
       ? `<div class="msg"><b>출발지만 정하면 됩니다</b>
-          지도를 한 번 누르거나 장소를 검색하세요.<br>
+          지도를 한 번 누르거나, 오른쪽 아래 ⌖ 로 현위치를 잡으세요.<br>
           위에서 고른 시간(${minutes}분)에 맞춰 돌아오는 코스 5개를 뽑아드려요.</div>`
       : `<div class="msg"><b>출발지와 도착지를 정해주세요</b>
-          지도를 두 번 누르면 됩니다. 위 검색창이나 예시 버튼을 써도 돼요.<br>
+          지도를 두 번 누르거나, 위에서 장소를 검색하세요.<br>
+          오른쪽 아래 ⌖ 를 누르면 현위치로 잡을 수 있어요.<br>
           찍은 핀은 끌어서 옮길 수 있어요.</div>`;
     return;
   }
@@ -1325,14 +1352,6 @@ async function doSearch(){
 $('qgo').onclick=doSearch;
 $('q').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 
-document.querySelectorAll('.ex').forEach(b=>b.onclick=()=>{
-  const [a,bb,na,nb]=EXAMPLES[+b.dataset.ex];
-  if(mA)map.removeLayer(mA); if(mB)map.removeLayer(mB);
-  A=a;B=bb;mA=setMarker('A',a);mB=setMarker('B',bb);
-  label('A',na);label('B',nb);
-  poolKey='';pool=[];ranked=[];search();
-});
-
 /* 동행자 칩 + 산책 모드 토글.
    산책 모드는 동행자를 대체하는 게 아니라 "목적지 유무"를 바꾸는 별도 축이라,
    동행자 선택은 그대로 살려둡니다 (부모님과 30분 산책 / 혼자 30분 산책). */
@@ -1360,7 +1379,6 @@ $('walkChip').onclick=()=>{
   walkMode=!walkMode;
   $('walkChip').classList.toggle('on',walkMode);
   $('mins').style.display=walkMode?'flex':'none';
-  $('exs').style.display=walkMode?'none':'flex';
   cmpMode=false;
   if(walkMode&&mB){ map.removeLayer(mB); mB=null; B=null; label('B',null); }
   pool=[];ranked=[];poolKey='';clearLines();
